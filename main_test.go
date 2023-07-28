@@ -117,7 +117,7 @@ func TestSortRoutesByDurationAsc(t *testing.T) {
 		{"13.397634,52.529407", 500, 100},
 	}
 
-	var output = Output{
+	var output = GetRoutesResp{
 		Source: "13.388860,52.517037",
 		Routes: routes,
 	}

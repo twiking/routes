@@ -27,7 +27,7 @@ type QueryParams struct {
 	Dst []string `form:"dst" binding:"required" validate:"latlng"`
 }
 
-type ExternalRouteData struct {
+type OsrmApiRouteData struct {
 	Routes []struct {
 		Duration float64 `json:"duration"`
 		Distance float64 `json:"distance"`
@@ -41,12 +41,12 @@ type Route struct {
 	Distance    float64 `json:"distance"`
 }
 
-type Output struct {
+type GetRoutesResp struct {
 	Source string  `json:"source"`
 	Routes []Route `json:"routes"`
 }
 
-type ErrorOutput struct {
+type ErrResp struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 }
@@ -77,7 +77,7 @@ func getRoutes(c *gin.Context) {
 	}
 
 	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorOutput{
+		c.JSON(http.StatusBadRequest, ErrResp{
 			Code:    http.StatusBadRequest,
 			Message: customErrorMessage(err),
 		})
@@ -98,18 +98,18 @@ func getRoutes(c *gin.Context) {
 		}
 	}
 
-	var output = Output{
+	var resp = GetRoutesResp{
 		Source: query.Src,
 		Routes: routes,
 	}
 
-	output.sortRoutesByDurationAsc()
+	resp.sortRoutesByDurationAsc()
 
-	c.JSON(http.StatusOK, output)
+	c.JSON(http.StatusOK, resp)
 
 }
 
-func (o *Output) sortRoutesByDurationAsc() {
+func (o *GetRoutesResp) sortRoutesByDurationAsc() {
 	sort.Slice(o.Routes, func(i, j int) bool {
 		// Sort by duration if distance is equal
 		if o.Routes[i].Duration == o.Routes[j].Duration {
@@ -137,7 +137,7 @@ func fetchRouteData(src string, dst string, routeCh chan Route) {
 		return
 	}
 
-	var data ExternalRouteData
+	var data OsrmApiRouteData
 	err = json.Unmarshal(body, &data)
 	if (err != nil) || (data.Code != "Ok") {
 		routeCh <- Route{}
