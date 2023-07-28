@@ -10,44 +10,40 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+var (
+	router = setupRouter()
+)
+
+func mockGetRoutesRequest(url string) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	router.ServeHTTP(rec, req)
+
+	return rec
+}
+
 func TestGetRoutesReturns400WhenNoParams(t *testing.T) {
-	router := setupRouter()
+	rec := mockGetRoutesRequest("/routes")
 
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest(http.MethodGet, "/routes", nil)
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
 func TestGetRoutesReturns400WhenNoSrcParam(t *testing.T) {
-	router := setupRouter()
+	rec := mockGetRoutesRequest("/routes?dst=13.397634,52.529407")
 
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest(http.MethodGet, "/routes?dst=13.397634,52.529407", nil)
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
 func TestGetRoutesReturns400WhenNoDstParam(t *testing.T) {
-	router := setupRouter()
+	rec := mockGetRoutesRequest("/routes?src=13.388860,52.517037")
 
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest(http.MethodGet, "/routes?src=13.388860,52.517037", nil)
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
 func TestGetRoutesReturns400WhenLatLongIsInvalid(t *testing.T) {
-	router := setupRouter()
+	rec := mockGetRoutesRequest("/routes?src=13.388860,52.517037&dst=13.428555,52.523219&dst=invalid")
 
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest(http.MethodGet, "/routes?src=13.388860,52.517037&dst=13.428555,52.523219&dst=invalid", nil)
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
 func TestGetRoutesReturns200(t *testing.T) {
@@ -75,25 +71,20 @@ func TestGetRoutesReturns200(t *testing.T) {
 		p3 := fmt.Sprintf(osrmApiPath, src, dst3)
 		if r.URL.Path == p3 {
 			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(`{"code":"InvalidQuery"}`))
+			w.Write([]byte(`{"code":"InvalidQuery", "message": "Query string malformed close to position 57"}`))
 			return
 		}
 
 	}))
 	defer mockOsrmApi.Close()
 
-	router := setupRouter()
 	osrmApiUrl = mockOsrmApi.URL + osrmApiPath
+	rec := mockGetRoutesRequest(fmt.Sprintf("/routes?src=%s&dst=%s&dst=%s&dst=%s", src, dst1, dst2, dst3))
 
-	w := httptest.NewRecorder()
-	url := fmt.Sprintf("/routes?src=%s&dst=%s&dst=%s&dst=%s", src, dst1, dst2, dst3)
-	req, _ := http.NewRequest(http.MethodGet, url, nil)
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, http.StatusOK, rec.Code)
 
 	expectedResp := `{"source":"13.388860,52.517037","routes":[{"destination":"13.428555,52.523219","duration":260.1,"distance":1886.3},{"destination":"13.397634,52.529407","duration":2490.1,"distance":3286.3}]}`
-	assert.Equal(t, expectedResp, w.Body.String())
+	assert.Equal(t, expectedResp, rec.Body.String())
 }
 
 func TestSortRoutesByDurationAsc(t *testing.T) {

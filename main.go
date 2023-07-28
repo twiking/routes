@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -32,7 +33,8 @@ type OsrmApiRouteData struct {
 		Duration float64 `json:"duration"`
 		Distance float64 `json:"distance"`
 	} `json:"routes"`
-	Code string `json:"code"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 type Route struct {
@@ -79,24 +81,29 @@ func getRoutes(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusBadRequest, ErrResp{
 			Code:    http.StatusBadRequest,
-			Message: customErrorMessage(err),
+			Message: validationErrMsg(err),
 		})
 		return
 	}
 
-	routeCh := make(chan Route)
 	routes := make([]Route, 0)
 
+	var wg sync.WaitGroup
 	for _, dst := range query.Dst {
-		go fetchRouteData(query.Src, dst, routeCh)
+		wg.Add(1)
+		go func(d string) {
+			defer wg.Done()
+			route, err := fetchRouteData(query.Src, d)
+			if err != nil {
+				// Here we could save errors to a []Error and handle them depending on requirements.
+				// For now, no individual errors will block the output.
+			} else {
+				routes = append(routes, route)
+			}
+		}(dst)
 	}
 
-	for i := 0; i < len(query.Dst); i++ {
-		route := <-routeCh
-		if route != (Route{}) {
-			routes = append(routes, route)
-		}
-	}
+	wg.Wait()
 
 	var resp = GetRoutesResp{
 		Source: query.Src,
@@ -106,7 +113,43 @@ func getRoutes(c *gin.Context) {
 	resp.sortRoutesByDurationAsc()
 
 	c.JSON(http.StatusOK, resp)
+}
 
+func fetchRouteData(src string, dst string) (Route, error) {
+	url := fmt.Sprintf(osrmApiUrl, src, dst)
+	resp, err := httpClient.Get(url)
+	if err != nil {
+		return Route{}, err
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusBadRequest {
+		// StatusBadRequest is being handled further down for fetching data.Message
+		return Route{}, fmt.Errorf("response code: %d", resp.StatusCode)
+	}
+
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return Route{}, err
+	}
+
+	var data OsrmApiRouteData
+	err = json.Unmarshal(body, &data)
+	if err != nil {
+		return Route{}, err
+	}
+
+	if data.Code != "Ok" {
+		return Route{}, fmt.Errorf("response code: %d. message: %s", resp.StatusCode, data.Message)
+	}
+
+	route := Route{
+		Destination: dst,
+		Duration:    data.Routes[0].Duration,
+		Distance:    data.Routes[0].Distance,
+	}
+
+	return route, nil
 }
 
 func (o *GetRoutesResp) sortRoutesByDurationAsc() {
@@ -121,38 +164,7 @@ func (o *GetRoutesResp) sortRoutesByDurationAsc() {
 	})
 }
 
-func fetchRouteData(src string, dst string, routeCh chan Route) {
-	url := fmt.Sprintf(osrmApiUrl, src, dst)
-	resp, err := httpClient.Get(url)
-
-	if (err != nil) || (resp.StatusCode != http.StatusOK) {
-		routeCh <- Route{}
-		return
-	}
-
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		routeCh <- Route{}
-		return
-	}
-
-	var data OsrmApiRouteData
-	err = json.Unmarshal(body, &data)
-	if (err != nil) || (data.Code != "Ok") {
-		routeCh <- Route{}
-		return
-	}
-
-	route := Route{
-		Destination: dst,
-		Duration:    data.Routes[0].Duration,
-		Distance:    data.Routes[0].Distance,
-	}
-
-	routeCh <- route
-}
-
+// latLng should have the pattern 13.388860,52.517037
 func validateLatLng(fl validator.FieldLevel) bool {
 	switch v := fl.Field().Interface().(type) {
 	case string:
@@ -171,7 +183,7 @@ func validateLatLng(fl validator.FieldLevel) bool {
 	}
 }
 
-func customErrorMessage(err error) string {
+func validationErrMsg(err error) string {
 	errs := err.(validator.ValidationErrors)
 	for _, e := range errs {
 		switch e.Tag() {
