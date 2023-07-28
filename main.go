@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
@@ -41,51 +42,62 @@ type ErrorOutput struct {
 	Message string `json:"message"`
 }
 
+var (
+	validate   *validator.Validate
+	httpClient = &http.Client{
+		Timeout: time.Second * 10,
+	}
+	latLngPattern = regexp.MustCompile(`^[-+]?([1-8]?\d(\.\d+)?|90(\.0+)?),[-+]?(180(\.0+)?|((1[0-7]\d)|([1-9]?\d))(\.\d+)?)$`)
+)
+
 func main() {
 	router := gin.Default()
 
-	validate := validator.New()
+	validate = validator.New()
 	validate.RegisterValidation("latlng", validateLatLng)
 
-	router.GET("/routes", func(c *gin.Context) {
-
-		var query QueryParams
-
-		err := c.ShouldBindQuery(&query)
-		if err == nil {
-			err = validate.Struct(query)
-		}
-
-		if err != nil {
-			c.JSON(http.StatusBadRequest, ErrorOutput{
-				Code:    http.StatusBadRequest,
-				Message: customErrorMessage(err),
-			})
-			return
-		}
-
-		routeCh := make(chan Route)
-		routes := make([]Route, 0)
-
-		for _, dst := range query.Dst {
-			go fetchRouteData(query.Src, dst, routeCh)
-		}
-
-		for i := 0; i < len(query.Dst); i++ {
-			route := <-routeCh
-			if route != (Route{}) {
-				routes = append(routes, route)
-			}
-		}
-
-		sortRoutes(routes)
-
-		c.JSON(http.StatusOK, Output{
-			Source: query.Src,
-			Routes: routes,
-		})
-	})
+	router.GET("/routes", getRoutes)
 	router.Run(":8080")
+}
+
+func getRoutes(c *gin.Context) {
+
+	var query QueryParams
+
+	err := c.ShouldBindQuery(&query)
+	if err == nil {
+		err = validate.Struct(query)
+	}
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorOutput{
+			Code:    http.StatusBadRequest,
+			Message: customErrorMessage(err),
+		})
+		return
+	}
+
+	routeCh := make(chan Route)
+	routes := make([]Route, 0)
+
+	for _, dst := range query.Dst {
+		go fetchRouteData(query.Src, dst, routeCh)
+	}
+
+	for i := 0; i < len(query.Dst); i++ {
+		route := <-routeCh
+		if route != (Route{}) {
+			routes = append(routes, route)
+		}
+	}
+
+	sortRoutes(routes)
+
+	c.JSON(http.StatusOK, Output{
+		Source: query.Src,
+		Routes: routes,
+	})
+
 }
 
 func sortRoutes(routes []Route) {
@@ -102,7 +114,7 @@ func sortRoutes(routes []Route) {
 
 func fetchRouteData(src string, dst string, routeCh chan Route) {
 	url := fmt.Sprintf("http://router.project-osrm.org/route/v1/driving/%s;%s?overview=false", src, dst)
-	resp, err := http.Get(url)
+	resp, err := httpClient.Get(url)
 
 	if (err != nil) || (resp.StatusCode != http.StatusOK) {
 		routeCh <- Route{}
@@ -133,15 +145,12 @@ func fetchRouteData(src string, dst string, routeCh chan Route) {
 }
 
 func validateLatLng(fl validator.FieldLevel) bool {
-	latLngRgx := `^[-+]?([1-8]?\d(\.\d+)?|90(\.0+)?),[-+]?(180(\.0+)?|((1[0-7]\d)|([1-9]?\d))(\.\d+)?)$`
-	rgx := regexp.MustCompile(latLngRgx)
-
 	switch v := fl.Field().Interface().(type) {
 	case string:
-		return rgx.MatchString(v)
+		return latLngPattern.MatchString(v)
 	case []string:
 		for _, str := range v {
-			match := rgx.MatchString(str)
+			match := latLngPattern.MatchString(str)
 			if !match {
 				return false
 			}
