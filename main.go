@@ -13,6 +13,15 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
+var (
+	validate   *validator.Validate
+	httpClient = &http.Client{
+		Timeout: time.Second * 10,
+	}
+	latLngPattern = regexp.MustCompile(`^[-+]?([1-8]?\d(\.\d+)?|90(\.0+)?),[-+]?(180(\.0+)?|((1[0-7]\d)|([1-9]?\d))(\.\d+)?)$`)
+	osrmApiUrl    = "http://router.project-osrm.org/route/v1/driving/%s;%s?overview=false"
+)
+
 type QueryParams struct {
 	Src string   `form:"src" binding:"required" validate:"latlng"`
 	Dst []string `form:"dst" binding:"required" validate:"latlng"`
@@ -42,22 +51,20 @@ type ErrorOutput struct {
 	Message string `json:"message"`
 }
 
-var (
-	validate   *validator.Validate
-	httpClient = &http.Client{
-		Timeout: time.Second * 10,
-	}
-	latLngPattern = regexp.MustCompile(`^[-+]?([1-8]?\d(\.\d+)?|90(\.0+)?),[-+]?(180(\.0+)?|((1[0-7]\d)|([1-9]?\d))(\.\d+)?)$`)
-)
-
-func main() {
-	router := gin.Default()
+func setupRouter() *gin.Engine {
+	r := gin.Default()
 
 	validate = validator.New()
 	validate.RegisterValidation("latlng", validateLatLng)
 
-	router.GET("/routes", getRoutes)
-	router.Run(":8080")
+	r.GET("/routes", getRoutes)
+
+	return r
+}
+
+func main() {
+	r := setupRouter()
+	r.Run(":8080")
 }
 
 func getRoutes(c *gin.Context) {
@@ -115,7 +122,7 @@ func (o *Output) sortRoutesByDurationAsc() {
 }
 
 func fetchRouteData(src string, dst string, routeCh chan Route) {
-	url := fmt.Sprintf("http://router.project-osrm.org/route/v1/driving/%s;%s?overview=false", src, dst)
+	url := fmt.Sprintf(osrmApiUrl, src, dst)
 	resp, err := httpClient.Get(url)
 
 	if (err != nil) || (resp.StatusCode != http.StatusOK) {
