@@ -26,9 +26,14 @@ func TestSortRoutes(t *testing.T) {
 		{"13.397634,52.529407", 500, 100},
 	}
 
-	sortRoutes(routes)
+	var output = Output{
+		Source: "13.388860,52.517037",
+		Routes: routes,
+	}
 
-	result := reflect.DeepEqual(routes, expectedRoutes)
+	output.sortRoutesByDurationAsc()
+
+	result := reflect.DeepEqual(output.Routes, expectedRoutes)
 
 	if !result {
 		t.Fatal("Sort order is not equal to", expectedRoutes)

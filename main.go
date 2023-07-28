@@ -91,24 +91,26 @@ func getRoutes(c *gin.Context) {
 		}
 	}
 
-	sortRoutes(routes)
-
-	c.JSON(http.StatusOK, Output{
+	var output = Output{
 		Source: query.Src,
 		Routes: routes,
-	})
+	}
+
+	output.sortRoutesByDurationAsc()
+
+	c.JSON(http.StatusOK, output)
 
 }
 
-func sortRoutes(routes []Route) {
-	sort.Slice(routes, func(i, j int) bool {
+func (o *Output) sortRoutesByDurationAsc() {
+	sort.Slice(o.Routes, func(i, j int) bool {
 		// Sort by duration if distance is equal
-		if routes[i].Duration == routes[j].Duration {
-			return routes[i].Distance < routes[j].Distance
+		if o.Routes[i].Duration == o.Routes[j].Duration {
+			return o.Routes[i].Distance < o.Routes[j].Distance
 		}
 
 		// Sort by duration
-		return routes[i].Duration < routes[j].Duration
+		return o.Routes[i].Duration < o.Routes[j].Duration
 	})
 }
 
