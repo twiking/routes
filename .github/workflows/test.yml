@@ -15,5 +15,7 @@ jobs:
         run: cd src
       - name: Install dependencies
         run: go mod download
+        env:
+          GOPROXY: https://proxy.golang.org
       - name: Run tests
         run: go test
