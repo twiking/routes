@@ -70,7 +70,6 @@ func main() {
 }
 
 func getRoutes(c *gin.Context) {
-
 	var query QueryParams
 
 	err := c.ShouldBindQuery(&query)
