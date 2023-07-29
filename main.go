@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"regexp"
 	"sort"
@@ -93,7 +93,7 @@ func getRoutes(c *gin.Context) {
 		wg.Add(1)
 		go func(d string) {
 			defer wg.Done()
-			route, err := fetchRouteData(query.Src, d)
+			route, err := getRouteData(query.Src, d)
 			if err != nil {
 				// Here we could save errors to a []Error and handle them depending on requirements.
 				// For now, no individual errors will block the output.
@@ -115,22 +115,16 @@ func getRoutes(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func fetchRouteData(src string, dst string) (Route, error) {
+func getRouteData(src string, dst string) (Route, error) {
 	url := fmt.Sprintf(osrmApiUrl, src, dst)
-	resp, err := httpClient.Get(url)
+
+	resp, body, err := makeRequestWith429Retries(url)
 	if err != nil {
 		return Route{}, err
 	}
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusBadRequest {
-		// StatusBadRequest is being handled further down for fetching data.Message
 		return Route{}, fmt.Errorf("response code: %d", resp.StatusCode)
-	}
-
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return Route{}, err
 	}
 
 	var data OsrmApiRouteData
@@ -150,6 +144,34 @@ func fetchRouteData(src string, dst string) (Route, error) {
 	}
 
 	return route, nil
+}
+
+func makeRequestWith429Retries(url string) (*http.Response, []byte, error) {
+	var body []byte
+	var err error
+	var resp *http.Response
+	attempts := 20
+
+	for i := 0; i < attempts; i++ {
+		resp, err = httpClient.Get(url)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests {
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		defer resp.Body.Close()
+		body, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, nil, err
+		}
+		break
+	}
+
+	return resp, body, nil
 }
 
 func (o *GetRoutesResp) sortRoutesByDurationAsc() {
