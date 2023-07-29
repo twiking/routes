@@ -66,7 +66,7 @@ func setupRouter() *gin.Engine {
 
 func main() {
 	r := setupRouter()
-	r.Run(":8080")
+	r.Run()
 }
 
 func getRoutes(c *gin.Context) {
@@ -147,10 +147,13 @@ func getRouteData(src string, dst string) (Route, error) {
 }
 
 func makeRequestWith429Retries(url string) (*http.Response, []byte, error) {
-	var body []byte
-	var err error
-	var resp *http.Response
+	var (
+		body []byte
+		err  error
+		resp *http.Response
+	)
 	attempts := 20
+	backoffTime := 1 * time.Second
 
 	for i := 0; i < attempts; i++ {
 		resp, err = httpClient.Get(url)
@@ -159,7 +162,7 @@ func makeRequestWith429Retries(url string) (*http.Response, []byte, error) {
 		}
 
 		if resp.StatusCode == http.StatusTooManyRequests {
-			time.Sleep(1 * time.Second)
+			time.Sleep(backoffTime)
 			continue
 		}
 
