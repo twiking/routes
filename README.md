@@ -3,9 +3,9 @@
 ## Install
 The application runs on port 3000 by default. Change the port in `docker-compose.yml` if it conflicts with your existing setup.
 
-```git clone https://github.com/twiking/routes.git```
-```cd routes```
-```docker-compose up --build```
+1. ```git clone https://github.com/twiking/routes.git```
+1. ```cd routes```
+1. ```docker-compose up --build```
 
 Application runs on http://localhost:3000
 
